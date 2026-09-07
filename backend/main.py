@@ -174,7 +174,12 @@ async def scan_cards(image: UploadFile = File(...)):
         # Fall back to mock response for testing and offline development
         mock_names = ["Diamond Cluster", "Searing Ruby", "Ignite"]
         matched_cards = match_card_names(mock_names)
-        return {"detected_cards": matched_cards}
+        return {
+            "detected_cards": matched_cards,
+            "total_detected": len(mock_names),
+            "matched_count": len(matched_cards),
+            "unmatched_cards": []
+        }
         
     model_name = config.get_gemini_model()
     
@@ -240,8 +245,14 @@ async def scan_cards(image: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Vision API error: {str(e)}")
         
     sorted_items = sort_cards_spatially(detected_items)
-    matched_cards = match_card_names(sorted_items)
-    return {"detected_cards": matched_cards}
+    matched_cards, unmatched_cards = match_card_names(sorted_items, return_unmatched=True)
+    total_detected = max(len(sorted_items), len(matched_cards) + len(unmatched_cards))
+    return {
+        "detected_cards": matched_cards,
+        "total_detected": total_detected,
+        "matched_count": len(matched_cards),
+        "unmatched_cards": unmatched_cards
+    }
 
 def sort_cards_spatially(card_items):
     """Sort detected card items into natural reading order:
@@ -334,7 +345,7 @@ def sort_cards_spatially(card_items):
 
     return card_items
 
-def match_card_names(names):
+def match_card_names(names, return_unmatched=False):
     """Match raw or noisy OCR card names against the canonical supply card database.
 
     Uses RapidFuzz WRatio fuzzy matching with a confidence threshold (>= 55)
@@ -342,11 +353,13 @@ def match_card_names(names):
 
     Args:
         names (list): List of candidate card names or dicts from vision detection.
+        return_unmatched (bool): If True, returns tuple (matched_cards, unmatched_names).
 
     Returns:
-        list[dict]: Matched canonical card records from SUPPLY_CARDS in provided order.
+        list[dict] | tuple[list[dict], list[str]]: Matched canonical card records, and optionally unmatched names.
     """
     matched = []
+    unmatched = []
     seen_ids = set()
     for item in names:
         if isinstance(item, str):
@@ -355,9 +368,10 @@ def match_card_names(names):
             name = item.get("name") or item.get("card_name") or item.get("label") or ""
         else:
             continue
-        if not name or not isinstance(name, str):
+        cleaned_name = str(name).strip()
+        if not cleaned_name:
             continue
-        match = process.extractOne(name, CARD_NAMES, scorer=fuzz.WRatio)
+        match = process.extractOne(cleaned_name, CARD_NAMES, scorer=fuzz.WRatio)
         if match and match[1] >= 55:
             matched_name = match[0]
             # Find the card object from canonical supply list
@@ -367,6 +381,10 @@ def match_card_names(names):
                         matched.append(card)
                         seen_ids.add(card["index"])
                     break
+        else:
+            unmatched.append(cleaned_name)
+    if return_unmatched:
+        return matched, unmatched
     return matched
 
 # Serve static frontend build if it exists (single container production deployment)

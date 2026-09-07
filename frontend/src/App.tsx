@@ -128,10 +128,25 @@ function App() {
         throw new Error(errJson?.detail || "Scan failed");
       }
       const data = await res.json();
-      if (data.detected_cards && data.detected_cards.length > 0) {
-        setSupply(prev => [...prev, ...data.detected_cards]);
-      } else {
+      const detectedCards: Card[] = data.detected_cards || [];
+      const unmatchedCards: string[] = data.unmatched_cards || [];
+      const totalDetected: number = data.total_detected ?? (detectedCards.length + unmatchedCards.length);
+
+      if (detectedCards.length > 0) {
+        setSupply(prev => [...prev, ...detectedCards]);
+      }
+
+      if (totalDetected === 0) {
         alert("No supply cards detected in the image.");
+      } else if (unmatchedCards.length > 0) {
+        const unmatchedList = unmatchedCards.map(name => `• ${name}`).join('\n');
+        alert(
+          `Detected ${totalDetected} card${totalDetected === 1 ? '' : 's'}` +
+          (detectedCards.length > 0 ? ` (${detectedCards.length} added to supply)` : '') +
+          `.\n\n${unmatchedCards.length} card${unmatchedCards.length === 1 ? '' : 's'} could not be found in the database:\n${unmatchedList}`
+        );
+      } else {
+        alert(`Detected ${totalDetected} card${totalDetected === 1 ? '' : 's'} (all matched and added to supply).`);
       }
     } catch (err: unknown) {
       console.error("Scan error:", err);

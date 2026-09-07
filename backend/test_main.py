@@ -142,8 +142,23 @@ def test_match_card_names_dict_format():
     assert matched[0]["name"] == "Searing Ruby"
     assert matched[1]["name"] == "Diamond Cluster"
 
+def test_match_card_names_return_unmatched():
+    """Verify that match_card_names separates matched and unmatched card names."""
+    from main import match_card_names
+    items = [
+        {"name": "Diamond Cluster"},
+        {"name": "Totally Nonexistent Fake Card 12345"},
+        {"name": "Ignite"},
+    ]
+    matched, unmatched = match_card_names(items, return_unmatched=True)
+    assert len(matched) == 2
+    assert matched[0]["name"] == "Diamond Cluster"
+    assert matched[1]["name"] == "Ignite"
+    assert len(unmatched) == 1
+    assert "Totally Nonexistent Fake Card 12345" in unmatched
+
 def test_scan_valid_image_mocked():
-    """Verify that an end-to-end scan returns detected cards using the mock handler when no API key is set."""
+    """Verify that an end-to-end scan returns detected cards, counts, and unmatched list."""
     img = Image.new('RGB', (10, 10), color = 'red')
     img_byte_arr = io.BytesIO()
     img.save(img_byte_arr, format='JPEG')
@@ -158,6 +173,12 @@ def test_scan_valid_image_mocked():
     assert response.status_code == 200
     data = response.json()
     assert "detected_cards" in data
+    assert "total_detected" in data
+    assert "matched_count" in data
+    assert "unmatched_cards" in data
+    assert data["total_detected"] == 3
+    assert data["matched_count"] == 3
+    assert data["unmatched_cards"] == []
     assert isinstance(data["detected_cards"], list)
     assert len(data["detected_cards"]) == 3
     assert data["detected_cards"][0]["name"] == "Diamond Cluster"
@@ -179,6 +200,7 @@ def test_scan_exif_orientation_transposed():
     assert response.status_code == 200
     data = response.json()
     assert "detected_cards" in data
+    assert "total_detected" in data
     assert len(data["detected_cards"]) == 3
 
 def test_config_methods():
