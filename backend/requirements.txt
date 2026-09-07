@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+python-multipart
+Pillow
+rapidfuzz
+google-genai
+pytest
+httpx
+pytest-asyncio
