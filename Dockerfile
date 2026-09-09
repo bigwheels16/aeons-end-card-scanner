@@ -22,5 +22,6 @@ COPY --chown=appuser:appuser backend/ ./backend/
 COPY --chown=appuser:appuser data/ ./data/
 COPY --chown=appuser:appuser --from=frontend-builder /app/frontend/dist ./frontend/dist/
 
-EXPOSE 8080
-CMD ["sh", "-c", "exec uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8080} --timeout-graceful-shutdown 15"]
+ENV PORT=8081
+EXPOSE 8081
+CMD ["sh", "-c", "exec uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8081} --timeout-graceful-shutdown 15"]
