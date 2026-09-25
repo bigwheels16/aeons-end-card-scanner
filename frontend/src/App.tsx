@@ -25,6 +25,49 @@ const sortCardsByCost = (cards: Card[]): Card[] => {
   });
 };
 
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+// Stop shrinking below this long edge; card text becomes unreadable for the scanner.
+const MIN_LONG_EDGE_PX = 1024;
+
+/**
+ * Re-encode an oversized image as JPEG, scaling it down until it fits under MAX_UPLOAD_BYTES.
+ * Throws if the image can't be decoded or can't be made small enough.
+ */
+const shrinkImage = async (file: File): Promise<File> => {
+  const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  try {
+    let width = bitmap.width;
+    let height = bitmap.height;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas 2D context unavailable');
+
+    for (;;) {
+      canvas.width = width;
+      canvas.height = height;
+      // JPEG has no alpha; fill white so transparent PNG regions don't turn black
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(bitmap, 0, 0, width, height);
+
+      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+      if (!blob) throw new Error('Failed to encode image');
+      if (blob.size <= MAX_UPLOAD_BYTES) {
+        const name = file.name.replace(/\.[^.]*$/, '') + '.jpg';
+        return new File([blob], name, { type: 'image/jpeg' });
+      }
+
+      if (Math.max(width, height) * 0.75 < MIN_LONG_EDGE_PX) {
+        throw new Error('Image is too large to shrink under 10MB');
+      }
+      width = Math.round(width * 0.75);
+      height = Math.round(height * 0.75);
+    }
+  } finally {
+    bitmap.close();
+  }
+};
+
 /**
  * Main application component for Aeon's End Supply Scanner.
  * 
@@ -109,16 +152,16 @@ function App() {
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      alert("File size exceeds 10MB limit.");
-      return;
-    }
-
     setIsScanning(true);
-    const formData = new FormData();
-    formData.append('image', file);
-    
+
     try {
+      if (file.size > MAX_UPLOAD_BYTES) {
+        file = await shrinkImage(file);
+      }
+
+      const formData = new FormData();
+      formData.append('image', file);
+
       const res = await fetch('/api/scan', {
         method: 'POST',
         body: formData,
@@ -304,7 +347,7 @@ function App() {
       >
         <input 
           type="file" 
-          accept="image/jpeg, image/png, image/webp" 
+          accept="image/*" 
           ref={fileInputRef} 
           style={{ display: 'none' }}
           onChange={handleFileUpload}
@@ -315,7 +358,7 @@ function App() {
           <div>
             <Upload size={48} />
             <h2>{isDragging ? 'Drop image here to scan' : 'Click or drop image to scan supply'}</h2>
-            <p style={{ color: '#888', fontSize: '0.85rem', margin: '4px 0 0' }}>Supports JPEG, PNG, WebP up to 10MB</p>
+            <p style={{ color: '#888', fontSize: '0.85rem', margin: '4px 0 0' }}>Supports JPEG, PNG, WebP (images over 10MB are shrunk automatically)</p>
           </div>
         )}
       </div>
