@@ -362,3 +362,18 @@ header {
   font-size: 0.9em;
   margin: 30px 0;
 }
+
+.auth-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.auth-user {
+  color: #aaa;
+  font-size: 0.9rem;
+}
+
+a.toggle-view-btn {
+  text-decoration: none;
+}

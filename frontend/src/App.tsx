@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, Trash2, Replace, Plus, Image as ImageIcon, FileText, GripVertical } from 'lucide-react';
+import { Upload, Trash2, Replace, Plus, Image as ImageIcon, FileText, GripVertical, LogIn, LogOut } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import './App.css';
 import type { Card } from './types';
@@ -68,6 +68,12 @@ const shrinkImage = async (file: File): Promise<File> => {
   }
 };
 
+/** Signed-in user from the OAuth2-Proxy sidecar's /oauth2/userinfo endpoint. */
+type AuthUser = { email?: string; preferredUsername?: string; user?: string };
+
+/** Current path and query, so login/logout return to the same supply (?cards=...). */
+const currentRelativeUrl = () => window.location.pathname + window.location.search;
+
 /**
  * Main application component for Aeon's End Supply Scanner.
  * 
@@ -101,7 +107,30 @@ function App() {
   const [draggedCardIndex, setDraggedCardIndex] = useState<number | null>(null);
   const [dragOverCardIndex, setDragOverCardIndex] = useState<number | null>(null);
   
+  // Signed-in user; null when logged out, undefined while the check is in flight
+  const [authUser, setAuthUser] = useState<AuthUser | null | undefined>(undefined);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Ask the auth sidecar whether this browser has a valid, authorized session.
+  // Anything other than a 200 is treated as logged out.
+  useEffect(() => {
+    fetch('/oauth2/userinfo', { headers: { Accept: 'application/json' } })
+      .then(async res => {
+        if (res.ok) {
+          setAuthUser(await res.json());
+          return;
+        }
+        if (res.status !== 401 && res.status !== 403) {
+          console.error(`Auth check failed: HTTP ${res.status}`);
+        }
+        setAuthUser(null);
+      })
+      .catch(err => {
+        console.error("Auth check failed", err);
+        setAuthUser(null);
+      });
+  }, []);
 
   // Fetch canonical card list and restore state from URL query parameters on mount
   useEffect(() => {
@@ -165,7 +194,12 @@ function App() {
       const res = await fetch('/api/scan', {
         method: 'POST',
         body: formData,
+        headers: { Accept: 'application/json' },
       });
+      if (res.status === 401 || res.status === 403) {
+        setAuthUser(null);
+        throw new Error("Your session has expired. Please log in again.");
+      }
       if (!res.ok) {
         const errJson = await res.json().catch(() => null);
         throw new Error(errJson?.detail || "Scan failed");
@@ -334,34 +368,51 @@ function App() {
       {/* Header bar with title */}
       <header>
         <h1>Aeon's End Supply Scanner</h1>
-      </header>
-
-      {/* Image upload / camera dropzone area */}
-      <div 
-        className={`scanner-area ${isDragging ? 'drag-over' : ''}`}
-        onClick={() => fileInputRef.current?.click()}
-        onDragOver={handleDragOver}
-        onDragEnter={handleDragEnter}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-      >
-        <input 
-          type="file" 
-          accept="image/*" 
-          ref={fileInputRef} 
-          style={{ display: 'none' }}
-          onChange={handleFileUpload}
-        />
-        {isScanning ? (
-          <p>Scanning... Please wait.</p>
-        ) : (
-          <div>
-            <Upload size={48} />
-            <h2>{isDragging ? 'Drop image here to scan' : 'Click or drop image to scan supply'}</h2>
-            <p style={{ color: '#888', fontSize: '0.85rem', margin: '4px 0 0' }}>Supports JPEG, PNG, WebP (images over 10MB are shrunk automatically)</p>
+        {authUser && (
+          <div className="auth-controls">
+            <span className="auth-user">{authUser.preferredUsername || authUser.email || authUser.user}</span>
+            <a className="toggle-view-btn" href={`/oauth2/sign_out?rd=${encodeURIComponent(currentRelativeUrl())}`}>
+              <LogOut size={16} />
+              Log out
+            </a>
           </div>
         )}
-      </div>
+        {authUser === null && (
+          <a className="toggle-view-btn" href={`/oauth2/start?rd=${encodeURIComponent(currentRelativeUrl())}`}>
+            <LogIn size={16} />
+            Log in
+          </a>
+        )}
+      </header>
+
+      {/* Image upload / camera dropzone area (logged-in users only; the sidecar also blocks /api/scan) */}
+      {authUser && (
+        <div 
+          className={`scanner-area ${isDragging ? 'drag-over' : ''}`}
+          onClick={() => fileInputRef.current?.click()}
+          onDragOver={handleDragOver}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          <input 
+            type="file" 
+            accept="image/*" 
+            ref={fileInputRef} 
+            style={{ display: 'none' }}
+            onChange={handleFileUpload}
+          />
+          {isScanning ? (
+            <p>Scanning... Please wait.</p>
+          ) : (
+            <div>
+              <Upload size={48} />
+              <h2>{isDragging ? 'Drop image here to scan' : 'Click or drop image to scan supply'}</h2>
+              <p style={{ color: '#888', fontSize: '0.85rem', margin: '4px 0 0' }}>Supports JPEG, PNG, WebP (images over 10MB are shrunk automatically)</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Action controls under dropzone and above card grid */}
       <div className="supply-actions">
