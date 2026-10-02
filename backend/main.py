@@ -1,19 +1,15 @@
 """Aeon's End Supply Card Scanner - Backend API
 
 FastAPI application providing:
-- Aeon's End card database retrieval (/api/cards)
 - Multi-modal vision scanning for supply card identification (/api/scan)
-- Static file serving for the React frontend single-page application
+- A health check for container probes (/api/health)
 """
 
-import os
 import json
 import io
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
 from rapidfuzz import process, fuzz
 from PIL import Image, ImageOps
 import google.genai as genai
@@ -38,14 +34,6 @@ app = FastAPI(
     description="Backend API for Aeon's End supply card identification and sharing",
     version="1.0.0",
     lifespan=lifespan,
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
 )
 
 DATA_PATH = config.get_data_path()
@@ -95,15 +83,6 @@ def load_data():
         logger.error(f"Error loading data: {e}")
 
 load_data()
-
-@app.get("/api/cards")
-async def get_cards():
-    """Retrieve all available Aeon's End supply cards.
-    
-    Returns:
-        list[dict]: List of card objects including id, name, type, cost, effect, and expansion.
-    """
-    return SUPPLY_CARDS
 
 @app.get("/api/health")
 async def health_check():
@@ -386,8 +365,3 @@ def match_card_names(names, return_unmatched=False):
     if return_unmatched:
         return matched, unmatched
     return matched
-
-# Serve static frontend build if it exists (single container production deployment)
-frontend_dist = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
-if os.path.isdir(frontend_dist):
-    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")

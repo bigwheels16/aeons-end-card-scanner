@@ -1,7 +1,7 @@
 """Unit test suite for Aeon's End Card Scanner API.
 
 Covers:
-- GET /api/cards database retrieval
+- Canonical card database loading and API-only routing
 - POST /api/scan input validation (text, corrupt files, size limits, format limits)
 - POST /api/scan fallback mock scanning
 - RapidFuzz OCR noisy string resolution
@@ -16,19 +16,17 @@ from PIL import Image
 
 client = TestClient(app)
 
-def test_get_cards():
-    """Verify that /api/cards returns 200 OK and all 427 canonical supply card objects."""
-    response = client.get("/api/cards")
+def test_health_reports_loaded_cards():
+    """Verify that /api/health reports all 427 canonical supply cards as loaded."""
+    response = client.get("/api/health")
     assert response.status_code == 200
-    data = response.json()
-    assert isinstance(data, list)
-    assert len(data) == 427
-    assert "index" in data[0]
-    assert data[0]["index"] == 0
-    assert "id" in data[0]
-    assert "name" in data[0]
-    assert "cost" in data[0]
-    assert "type" in data[0]
+    assert response.json() == {"status": "ok", "supply_cards_count": 427}
+
+def test_no_frontend_or_card_list_routes():
+    """Verify that the API serves no frontend pages and no card list."""
+    assert client.get("/").status_code == 404
+    assert client.get("/index.html").status_code == 404
+    assert client.get("/api/cards").status_code == 404
 
 def test_scan_invalid_format_text():
     """Verify that uploading a plain text file is rejected with 400 Bad Request."""
